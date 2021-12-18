@@ -16,7 +16,7 @@
         instance_type: t2.small
         image: ami-04902260ca3d33422
         region: us-east-1
-        key_name: devops #SSH 
+        key_name: devops 
         vpc_subnet_id: subnet-064b4ad086d5c58b6
         assign_public_ip: yes
         count: 1
@@ -24,7 +24,7 @@
         wait: true
         aws_access_key: "{{access_key}}"
         aws_secret_key: "{{secret_key}}"
-        security_token: "{{session_token}}" #specificke pre AWS educate
+        security_token: "{{session_token}}" 
 
       register: ec2
 
@@ -57,7 +57,7 @@
         name:
           - docker
           - git
-        state: latest #present alebo latest
+        state: latest 
         update_cache: yes
       become: yes
     - service:
@@ -70,7 +70,7 @@
       become: yes
     - name: Checkout Git repot
       git: 
-        repo: "https://github.com/DryDoge/uvod_do_devops.git"
+        repo: "https://github.com/jedv00/4IT572_DevOps.git"
         dest: ./app
     - name: Build eshop docker
       shell: cd app && docker build -t eshop:latest .
