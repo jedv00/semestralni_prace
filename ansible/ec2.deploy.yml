@@ -1,0 +1,100 @@
+- name: Deploy to EC2
+  hosts: localhost
+  connection: local
+
+  tasks: 
+    - name: Get actual info about instances
+      ec2_instance_info:
+        region: us-east-1
+        aws_access_key: "{{access_key}}"
+        aws_secret_key: "{{secret_key}}"
+        security_token: "{{session_token}}"
+      register: actual
+
+    - name: Launch EC2 instance
+      amazon.aws.ec2:
+        instance_type: t2.small
+        image: ami-04902260ca3d33422
+        region: us-east-1
+        key_name: devops #SSH 
+        vpc_subnet_id: subnet-064b4ad086d5c58b6
+        assign_public_ip: yes
+        count: 1
+        group: Eshop
+        wait: true
+        aws_access_key: "{{access_key}}"
+        aws_secret_key: "{{secret_key}}"
+        security_token: "{{session_token}}" #specificke pre AWS educate
+
+      register: ec2
+
+    - name: Add new instance to host group
+      add_host:
+        hostname: "{{ item.public_ip }}"
+        groupname: launched
+      loop: "{{ ec2.instances }}"
+
+    - name: Wait for SSH to come up
+      delegate_to: "{{ item.public_dns_name }}"
+      wait_for_connection:
+        delay: 30
+        timeout: 300
+      loop: "{{ ec2.instances }}"
+
+- name: Configure EC2
+  hosts: launched
+  connection: ssh
+
+  tasks:
+    - name: Add Centos Extras
+      shell: yum-config-manager --enable extras
+      become: yes
+    - name: Enable docker package
+      shell: amazon-linux-extras enable docker
+      become: yes
+    - name: Install Docker and Git
+      yum:
+        name:
+          - docker
+          - git
+        state: latest #present alebo latest
+        update_cache: yes
+      become: yes
+    - service:
+        name: docker
+        state: started
+        enabled: yes
+      become: yes
+    - name: Set rights to Docker
+      shell: usermod -a -G docker ec2-user
+      become: yes
+    - name: Checkout Git repot
+      git: 
+        repo: "https://github.com/DryDoge/uvod_do_devops.git"
+        dest: ./app
+    - name: Build eshop docker
+      shell: cd app && docker build -t eshop:latest .
+      become: yes
+    - name: Run eshop
+      shell: docker run -p 80:3000 eshop
+      async: 45
+      poll: 0
+      become: yes
+    - wait_for:
+        port: 80
+
+- name: Terminate instances
+  hosts: localhost
+  connection: local
+
+  tasks:
+    - name: Terminate previous instances
+      amazon.aws.ec2:
+        region: us-east-1
+        state: 'absent'
+        instance_ids: '{{ item.instance_id }}'
+        aws_access_key: "{{access_key}}"
+        aws_secret_key: "{{secret_key}}"
+        security_token: "{{session_token}}"
+        wait: yes
+      with_items: "{{actual.instances}}"

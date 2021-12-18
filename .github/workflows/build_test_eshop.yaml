@@ -1,0 +1,128 @@
+name: Build, test and deploy our Eshop for semestralka
+
+on:
+  push:
+      branches:
+        - main
+  pull_request:
+      branches:
+        - main
+
+jobs:
+  Install:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Git Checkout
+        uses: actions/checkout@v2.4.0
+        with:
+          token: ${{ secrets.WORKFLOW_TOKEN }}
+
+      - name: Setup Node
+        uses: actions/setup-node@v2.4.1
+        with:
+          node-version: 10
+
+      - name: Cache node modules
+        uses: actions/cache@v2
+        with:
+          path: node_modules
+          key: node_modules-${{ hashFiles('**/package-lock.json') }}
+          restore-keys: node_modules-
+
+      - name: Install with npm
+        run: |
+          npm ci
+  Build:
+    needs: Install
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Git Checkout
+        uses: actions/checkout@v2.4.0
+        with:
+          token: ${{ secrets.WORKFLOW_TOKEN }}
+
+      - name: Setup Node
+        uses: actions/setup-node@v2.4.1
+        with:
+          node-version: 10
+          
+      - name: Cache node modules
+        uses: actions/cache@v2
+        with:
+          path: node_modules
+          key: node_modules-${{ hashFiles('**/package-lock.json') }}
+      
+      - name: build
+        run: |
+          npm rebuild node-sass --force
+          npm run build -- --colors
+      - name: Cache node modules and build folder
+        if: ${{ github.ref == 'refs/heads/main' }}
+        uses: actions/cache@v2
+        with:
+          path: |
+            ~/.npm
+            ./node_modules
+            ./build
+          key: ${{ runner.os }}-build-${{ github.run_id }}
+          restore-keys: ${{ runner.os }}-build-${{ github.run_id }}
+
+  Test:
+    needs: Install
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Git Checkout
+        uses: actions/checkout@v2.4.0
+        with:
+          token: ${{ secrets.WORKFLOW_TOKEN }}
+
+      - name: Setup Node
+        uses: actions/setup-node@v2.4.1
+        with:
+          node-version: 10
+
+      - name: Cache node modules
+        uses: actions/cache@v2
+        with:
+          path: node_modules
+          key: node_modules-${{ hashFiles('**/package-lock.json') }}
+      
+      - name: Run Unit Tests
+        run: npm run test -- --colors
+
+
+  Deploy:
+    needs: [Build, Test]
+    runs-on: ubuntu-latest
+    if: ${{ github.ref == 'refs/heads/main' }}
+    env:
+      VAULT_PASS: ${{ secrets.VAULT_PASS }}
+      SSH_KEY: ${{ secrets.SSH_KEY }}
+
+    steps:
+    - name: Git Checkout
+      uses: actions/checkout@v2.4.0
+      with:
+        token: ${{ secrets.WORKFLOW_TOKEN }}
+
+    - name: Setup Python
+      uses: actions/setup-python@v2.3.1
+      with:
+        python-version: '3.7' 
+
+    - name: Install Ansible
+      run: pip3 install boto boto3 ansible==4 ansible-vault
+
+    - name: Prepare ssh key and vault password
+      run: |
+        echo "$VAULT_PASS" > vault_pass.txt  
+        chmod 400 vault_pass.txt
+        echo "$SSH_KEY" > devops.pem
+        chmod 400 devops.pem
+        sudo ssh-keygen -p -f devops.pem -m pem
+
+    - name: Run Ansible
+      run: ansible-playbook ansible/ec2.deploy.yml --ssh-common-args='-o StrictHostKeyChecking=no' --user ec2-user --key-file devops.pem --e @ansible/group_vars/all/aws.yml --vault-password-file vault_pass.txt
