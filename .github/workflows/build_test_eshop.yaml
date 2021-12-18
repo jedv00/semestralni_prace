@@ -99,7 +99,7 @@ jobs:
     runs-on: ubuntu-latest
     if: ${{ github.ref == 'refs/heads/main' }}
     env:
-      VAULT_PASS: ${{ secrets.VAULT_PASS }}
+      VAULT_SECRET: ${{ secrets.VAULT_SECRET }}
       SSH_KEY: ${{ secrets.SSH_KEY }}
 
     steps:
@@ -118,11 +118,11 @@ jobs:
 
     - name: Prepare ssh key and vault password
       run: |
-        echo "$VAULT_PASS" > vault_pass.txt  
-        chmod 400 vault_pass.txt
+        echo "$VAULT_SECRET" > vault_secret.txt  
+        chmod 400 vault_secret.txt
         echo "$SSH_KEY" > devops.pem
         chmod 400 devops.pem
         sudo ssh-keygen -p -f devops.pem -m pem
 
     - name: Run Ansible
-      run: ansible-playbook ansible/ec2.deploy.yml --ssh-common-args='-o StrictHostKeyChecking=no' --user ec2-user --key-file devops.pem --e @ansible/group_vars/all/aws.yml --vault-password-file vault_pass.txt
+      run: ansible-playbook ansible/ec2.deploy.yml --ssh-common-args='-o StrictHostKeyChecking=no' --user ec2-user --key-file devops.pem --e @ansible/group_vars/all/aws.yml --vault-password-file vault_secret.txt
